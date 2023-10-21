@@ -54,6 +54,8 @@ def get_gdrive_service():
 
 service = get_gdrive_service()
 
+# not used function for build, lists in console all files returned
+# by google drive api
 def list_files(items):
     """given items returned by Google Drive API, prints them in a tabular way"""
     if not items:
@@ -107,7 +109,8 @@ def get_cloud():
         try:
             #print(f"page token {results['nextPageToken']}")
             results = service.files().list(
-            pageSize=100, pageToken=results['nextPageToken'], fields="nextPageToken, files(id, name, mimeType, parents, modifiedTime)").execute()
+            pageSize=100, pageToken=results['nextPageToken'], 
+                fields="nextPageToken, files(id, name, mimeType, parents, modifiedTime)").execute()
             items = results.get('files', [])
             get_tree_from_cloud(items)
         except:
@@ -129,8 +132,10 @@ def get_tree_from_cloud(items):
     else:
         rows = []
         for item in items:
-            #print(f"type: {item['mimeType']} parent: {item['parents'][0]} id: {item['id']} size: {size} name: {item['name']} modified: {item['modifiedTime']}")
-            cloud_tree[item['id']] = {"name": item['name'], "parent": item['parents'][0], "type": item['mimeType'], "modified": datetime.timestamp(datetime.strptime(item['modifiedTime'], date_format))}
+            #print(f"type: {item['mimeType']} parent: {item['parents'][0]} id: {item['id']} name: {item['name']} modified: {item['modifiedTime']}")
+            cloud_tree[item['id']] = {"name": item['name'], 
+                                      "parent": item['parents'][0], "type": item['mimeType'], 
+                                      "modified": datetime.timestamp(datetime.strptime(item['modifiedTime'], date_format))}
 
 def get_cloud_path(key, curr_path=""):
     try:
@@ -167,6 +172,7 @@ def local_sync():
             for p in pth:
                 c_pth += f"/{p}"
                 if not os.path.exists(local_sync_folder + c_pth):
+                    #sync not present files
                     if p == pth[-1]:
                         #print(f"create file: {c_pth}")
                         r = service.files().get_media(fileId=cf)
@@ -186,9 +192,25 @@ def local_sync():
                         #print(c_pth)
                     os.utime(local_sync_folder + c_pth, (time.time(), cloud_tree[cf]['modified']))
                 else:
-                    #get modification time
-                    #print(f"{p} local: {datetime.fromtimestamp(os.path.getctime(local_sync_folder + c_pth)).strftime(date_format)} {datetime.fromtimestamp(os.path.getmtime(local_sync_folder + c_pth)).strftime(date_format)} \ncloud: {datetime.fromtimestamp(cloud_tree[cf]['modified']).strftime(date_format)}")
-                    pass
+                    #update local files
+                    #print(f"{p} local: {datetime.fromtimestamp(os.path.getmtime(local_sync_folder + c_pth)).strftime(date_format)} \ncloud: {datetime.fromtimestamp(cloud_tree[cf]['modified']).strftime(date_format)}")
+                    print(f"{p} local: {getmtime(local_sync_folder + c_pth)} \ncloud: {cloud_tree[cf]['modified']}")
+                    #                                          60 seconds of buffer
+                    if getmtime(local_sync_folder + c_pth) + 60 < cloud_tree[cf]['modified']:
+                        if p == pth[-1]:
+                            print(f"update file: {c_pth}")
+                            r = service.files().get_media(fileId=cf)
+                            fh = io.BytesIO()
+                            downloader = MediaIoBaseDownload(fh, r)
+                            done = False
+                            while done is False:
+                                status, done = downloader.next_chunk()
+                                #print("Download %d%%" % int(status.progress() * 100))
+                            # The file has been downloaded into RAM, now save it in a file
+                            fh.seek(0)
+                            with open(local_sync_folder + c_pth, 'wb') as f:
+                                shutil.copyfileobj(fh, f, length=131072)
+                        os.utime(local_sync_folder + c_pth, (time.time(), cloud_tree[cf]['modified']))
 
 ### Main
 
